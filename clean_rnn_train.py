@@ -305,133 +305,255 @@
 
 
 # clean_train_resnet.py
-"""
-Train a clean ResNet-based split model (uses rnn.py -> Model).
-Safe for Windows (multiprocessing guard) and works with CPU/GPU.
-"""
+# """
+# Train a clean ResNet-based split model (uses rnn.py -> Model).
+# Safe for Windows (multiprocessing guard) and works with CPU/GPU.
+# """
+
+# import argparse
+# import time
+# import torch
+# import torch.nn.functional as F
+# import torch.optim as optim
+# from torch.utils.data import DataLoader
+# import torchvision
+# import torchvision.transforms as transforms
+
+# # import your ResNet-based Model (rnn.py)
+# from rnn import Model
+
+# parser = argparse.ArgumentParser()
+# parser.add_argument('--clean-epoch', type=int, default=80, help='the number of training epochs without poisoning')
+# parser.add_argument('--dup', type=int, required=True, help='the ID for duplicated models of a same setting')
+# parser.add_argument('--multies', type=int, default=2, help='the number of multiple participants')
+# parser.add_argument('--unit', type=float, default=0.25, help='the feature ratio held by the attacker')
+# parser.add_argument('--batch-size', type=int, default=128, help='batch size (reduce for CPU)')
+# parser.add_argument('--num-workers', type=int, default=0, help='dataloader num_workers (0 for Windows/CPU)')
+# parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+
+# def train_model(model, dataloader, optimizer, epoch_num, is_binary=False, verbose=True):
+#     model.train()
+#     for epoch in range(epoch_num):
+#         cum_loss = 0.0
+#         cum_acc = 0.0
+#         tot = 0
+#         for i, (x_in, y_in) in enumerate(dataloader):
+#             x_in = x_in.to(device)
+#             y_in = y_in.to(device)
+#             pred = model(x_in)
+#             loss = F.cross_entropy(pred, y_in)  # use cross_entropy directly
+#             optimizer.zero_grad()
+#             loss.backward()
+#             optimizer.step()
+#             B = x_in.size(0)
+#             cum_loss += loss.item() * B
+#             pred_c = pred.max(1)[1].cpu()
+#             cum_acc += (pred_c.eq(y_in.cpu())).sum().item()
+#             tot += B
+#         if verbose:
+#             print(f"Epoch {epoch}, loss = {cum_loss/tot:.4f}, acc = {cum_acc/tot:.4f}")
+#     return
+
+# def eval_model(model, dataloader, is_binary=False):
+#     model.eval()
+#     cum_acc = 0
+#     tot = 0
+#     with torch.no_grad():
+#         for i, (x_in, y_in) in enumerate(dataloader):
+#             x_in = x_in.to(device)
+#             y_in = y_in.to(device)
+#             pred = model(x_in)
+#             pred_c = pred.max(1)[1].cpu()
+#             cum_acc += (pred_c.eq(y_in.cpu())).sum().item()
+#             tot += x_in.size(0)
+#     return cum_acc / tot
+
+# if __name__ == '__main__':
+#     args = parser.parse_args()
+
+#     # Decide device
+#     use_cuda = torch.cuda.is_available()
+#     device = torch.device('cuda' if use_cuda else 'cpu')
+#     print("Training on device:", device)
+
+#     # Reproducibility seeds
+#     torch.manual_seed(0)
+#     if use_cuda:
+#         torch.cuda.manual_seed_all(0)
+#         torch.backends.cudnn.deterministic = True
+#         torch.backends.cudnn.benchmark = False
+
+#     BATCH_SIZE = args.batch_size
+#     N_EPOCH = 100
+#     CLEAN_EPOCH = args.clean_epoch
+
+#     # Data transforms (same normalization as your project)
+#     transform_for_train = transforms.Compose([
+#         transforms.RandomCrop(32, padding=5),
+#         transforms.RandomRotation(10),
+#         transforms.RandomHorizontalFlip(p=0.5),
+#         transforms.Resize((32, 32)),
+#         transforms.ToTensor(),
+#         transforms.Normalize([0.4914, 0.4822, 0.4465],
+#                              [0.2470, 0.2430, 0.2610])
+#     ])
+#     transform_for_test = transforms.Compose([
+#         transforms.ToTensor(),
+#         transforms.Normalize([0.4914, 0.4822, 0.4465],
+#                              [0.2470, 0.2430, 0.2610])
+#     ])
+
+#     # Datasets (will download if needed)
+#     trainset = torchvision.datasets.CIFAR10(root='./raw_data/', train=True, download=True, transform=transform_for_train)
+#     testset = torchvision.datasets.CIFAR10(root='./raw_data/', train=False, download=True, transform=transform_for_test)
+
+#     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=args.num_workers)
+#     testloader = DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=args.num_workers)
+
+#     # Create model (pass gpu flag so rnn.py internal checks don't force cuda incorrectly)
+#     model = Model(gpu=use_cuda, multies=args.multies, unit=args.unit)
+#     # Ensure model on proper device (if rnn.py internally used .cuda, it's ok; calling to(device) is safe)
+#     model.to(device)
+
+#     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+#     # Train clean epochs first (CLEAN_EPOCH)
+#     t1 = time.time()
+#     if CLEAN_EPOCH > 0:
+#         print(f"Starting {CLEAN_EPOCH} clean epochs...")
+#         train_model(model, trainloader, optimizer, epoch_num=CLEAN_EPOCH, is_binary=False, verbose=True)
+#         torch.save(model.state_dict(), f'clean_epoch_{args.dup}-{args.multies}-{args.unit}.model')
+
+#     # Continue to full N_EPOCH
+#     remaining = N_EPOCH - CLEAN_EPOCH
+#     if remaining > 0:
+#         print(f"Continuing training for remaining {remaining} epochs...")
+#         train_model(model, trainloader, optimizer, epoch_num=remaining, is_binary=False, verbose=True)
+
+#     cleanacc = eval_model(model, testloader, is_binary=False)
+#     torch.save(model.state_dict(), f'clean-{args.dup}-{args.multies}-{args.unit}.model')
+#     print('clean acc: %.4f' % cleanacc)
+#     t2 = time.time()
+#     print("Training a model costs %.4fs." % (t2 - t1))
+
 
 import argparse
+import os
 import time
 import torch
 import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import DataLoader
-import torchvision
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, random_split
+from torchvision.datasets import ImageFolder
+from rnn import Model  # your ResNet-based model
 
-# import your ResNet-based Model (rnn.py)
-from rnn import Model
-
+# ----------------------------- #
+#        Argument Parser        #
+# ----------------------------- #
 parser = argparse.ArgumentParser()
-parser.add_argument('--clean-epoch', type=int, default=80, help='the number of training epochs without poisoning')
+parser.add_argument('--clean-epoch', type=int, default=80, help='the number of clean training epochs')
 parser.add_argument('--dup', type=int, required=True, help='the ID for duplicated models of a same setting')
 parser.add_argument('--multies', type=int, default=2, help='the number of multiple participants')
 parser.add_argument('--unit', type=float, default=0.25, help='the feature ratio held by the attacker')
-parser.add_argument('--batch-size', type=int, default=128, help='batch size (reduce for CPU)')
-parser.add_argument('--num-workers', type=int, default=0, help='dataloader num_workers (0 for Windows/CPU)')
+parser.add_argument('--batch-size', type=int, default=32, help='batch size (lower for CPU)')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+parser.add_argument('--data-dir', type=str, default=r"C:\Users\aront\Downloads\dataset\dataset", help='path to dataset folder')
 
-def train_model(model, dataloader, optimizer, epoch_num, is_binary=False, verbose=True):
+# ----------------------------- #
+#       Train & Eval Loop       #
+# ----------------------------- #
+def train_model(model, dataloader, optimizer, epoch_num, device):
     model.train()
     for epoch in range(epoch_num):
-        cum_loss = 0.0
-        cum_acc = 0.0
-        tot = 0
-        for i, (x_in, y_in) in enumerate(dataloader):
-            x_in = x_in.to(device)
-            y_in = y_in.to(device)
-            pred = model(x_in)
-            loss = F.cross_entropy(pred, y_in)  # use cross_entropy directly
+        total_loss, total_correct, total_samples = 0, 0, 0
+        for inputs, labels in dataloader:
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = F.cross_entropy(outputs, labels)
             loss.backward()
             optimizer.step()
-            B = x_in.size(0)
-            cum_loss += loss.item() * B
-            pred_c = pred.max(1)[1].cpu()
-            cum_acc += (pred_c.eq(y_in.cpu())).sum().item()
-            tot += B
-        if verbose:
-            print(f"Epoch {epoch}, loss = {cum_loss/tot:.4f}, acc = {cum_acc/tot:.4f}")
-    return
 
-def eval_model(model, dataloader, is_binary=False):
+            total_loss += loss.item() * inputs.size(0)
+            preds = outputs.argmax(dim=1)
+            total_correct += preds.eq(labels).sum().item()
+            total_samples += inputs.size(0)
+
+        print(f"Epoch [{epoch+1}/{epoch_num}] | Loss: {total_loss/total_samples:.4f} | "
+              f"Acc: {total_correct/total_samples:.4f}")
+
+def eval_model(model, dataloader, device):
     model.eval()
-    cum_acc = 0
-    tot = 0
+    total_correct, total_samples = 0, 0
     with torch.no_grad():
-        for i, (x_in, y_in) in enumerate(dataloader):
-            x_in = x_in.to(device)
-            y_in = y_in.to(device)
-            pred = model(x_in)
-            pred_c = pred.max(1)[1].cpu()
-            cum_acc += (pred_c.eq(y_in.cpu())).sum().item()
-            tot += x_in.size(0)
-    return cum_acc / tot
+        for inputs, labels in dataloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            preds = outputs.argmax(dim=1)
+            total_correct += preds.eq(labels).sum().item()
+            total_samples += inputs.size(0)
+    return total_correct / total_samples
 
+# ----------------------------- #
+#          Main Script          #
+# ----------------------------- #
 if __name__ == '__main__':
     args = parser.parse_args()
 
-    # Decide device
+    # Device setup
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
-    print("Training on device:", device)
+    print(f"Training on device: {device}")
 
-    # Reproducibility seeds
+    # Set seeds for reproducibility
     torch.manual_seed(0)
     if use_cuda:
         torch.cuda.manual_seed_all(0)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    BATCH_SIZE = args.batch_size
-    N_EPOCH = 100
-    CLEAN_EPOCH = args.clean_epoch
-
-    # Data transforms (same normalization as your project)
-    transform_for_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=5),
-        transforms.RandomRotation(10),
-        transforms.RandomHorizontalFlip(p=0.5),
+    # -------------------- #
+    #  Dataset Definition  #
+    # -------------------- #
+    transform_train = transforms.Compose([
         transforms.Resize((32, 32)),
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize([0.4914, 0.4822, 0.4465],
-                             [0.2470, 0.2430, 0.2610])
-    ])
-    transform_for_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize([0.4914, 0.4822, 0.4465],
-                             [0.2470, 0.2430, 0.2610])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
-    # Datasets (will download if needed)
-    trainset = torchvision.datasets.CIFAR10(root='./raw_data/', train=True, download=True, transform=transform_for_train)
-    testset = torchvision.datasets.CIFAR10(root='./raw_data/', train=False, download=True, transform=transform_for_test)
+    dataset = ImageFolder(root=args.data_dir, transform=transform_train)
+    num_classes = len(dataset.classes)
+    print(f"Detected classes: {dataset.classes}")
 
-    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=args.num_workers)
-    testloader = DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=args.num_workers)
+    # Split dataset into 80% train, 20% test
+    train_size = int(0.8 * len(dataset))
+    test_size = len(dataset) - train_size
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-    # Create model (pass gpu flag so rnn.py internal checks don't force cuda incorrectly)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+
+    # -------------------- #
+    #    Model Creation    #
+    # -------------------- #
     model = Model(gpu=use_cuda, multies=args.multies, unit=args.unit)
-    # Ensure model on proper device (if rnn.py internally used .cuda, it's ok; calling to(device) is safe)
     model.to(device)
-
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    # Train clean epochs first (CLEAN_EPOCH)
-    t1 = time.time()
-    if CLEAN_EPOCH > 0:
-        print(f"Starting {CLEAN_EPOCH} clean epochs...")
-        train_model(model, trainloader, optimizer, epoch_num=CLEAN_EPOCH, is_binary=False, verbose=True)
-        torch.save(model.state_dict(), f'clean_epoch_{args.dup}-{args.multies}-{args.unit}.model')
+    # -------------------- #
+    #     Training Loop    #
+    # -------------------- #
+    start_time = time.time()
+    print(f"Starting {args.clean_epoch} clean epochs...")
+    train_model(model, train_loader, optimizer, args.clean_epoch, device)
 
-    # Continue to full N_EPOCH
-    remaining = N_EPOCH - CLEAN_EPOCH
-    if remaining > 0:
-        print(f"Continuing training for remaining {remaining} epochs...")
-        train_model(model, trainloader, optimizer, epoch_num=remaining, is_binary=False, verbose=True)
+    print("Evaluating model...")
+    acc = eval_model(model, test_loader, device)
+    print(f"Clean Accuracy: {acc:.4f}")
 
-    cleanacc = eval_model(model, testloader, is_binary=False)
-    torch.save(model.state_dict(), f'clean-{args.dup}-{args.multies}-{args.unit}.model')
-    print('clean acc: %.4f' % cleanacc)
-    t2 = time.time()
-    print("Training a model costs %.4fs." % (t2 - t1))
+    torch.save(model.state_dict(), f"clean_resnet_{args.dup}-{args.multies}-{args.unit}.pth")
+    print(f"Model saved as clean_resnet_{args.dup}-{args.multies}-{args.unit}.pth")
+
+    print(f"Training finished in {time.time() - start_time:.2f}s.")
+

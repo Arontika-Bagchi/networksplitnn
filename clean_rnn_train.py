@@ -557,6 +557,153 @@
 
 #     print(f"Training finished in {time.time() - start_time:.2f}s.")
 
+# import argparse
+# import os
+# import time
+# import torch
+# import torch.nn.functional as F
+# import torchvision.transforms as transforms
+# from torch.utils.data import DataLoader, random_split
+# from torchvision.datasets import ImageFolder
+# from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+# import numpy as np
+# from rnn import Model  # ResNet-50 model
+
+# # ----------------------------- #
+# #        Argument Parser        #
+# # ----------------------------- #
+# parser = argparse.ArgumentParser()
+# parser.add_argument('--clean-epoch', type=int, default=80)
+# parser.add_argument('--dup', type=int, required=True)
+# parser.add_argument('--multies', type=int, default=2)
+# parser.add_argument('--unit', type=float, default=0.25)
+# parser.add_argument('--batch-size', type=int, default=32)
+# parser.add_argument('--lr', type=float, default=1e-3)
+# parser.add_argument('--data-dir', type=str,
+#                     default=r"C:\Users\aront\Downloads\dataset\dataset")
+
+# # ----------------------------- #
+# #       Train & Eval Loop       #
+# # ----------------------------- #
+# def train_model(model, dataloader, optimizer, epoch_num, device):
+#     model.train()
+#     for epoch in range(epoch_num):
+#         total_loss, total_correct, total_samples = 0, 0, 0
+#         for inputs, labels in dataloader:
+#             inputs, labels = inputs.to(device), labels.to(device)
+#             optimizer.zero_grad()
+#             outputs = model(inputs)
+#             loss = F.cross_entropy(outputs, labels)
+#             loss.backward()
+#             optimizer.step()
+
+#             total_loss += loss.item() * inputs.size(0)
+#             preds = outputs.argmax(dim=1)
+#             total_correct += preds.eq(labels).sum().item()
+#             total_samples += inputs.size(0)
+
+#         print(f"Epoch [{epoch + 1}/{epoch_num}] | "
+#               f"Loss: {total_loss / total_samples:.4f} | "
+#               f"Acc: {total_correct / total_samples:.4f}")
+
+# def eval_and_plot(model, dataloader, device, class_names):
+#     model.eval()
+#     y_true, y_pred = [], []
+#     with torch.no_grad():
+#         for inputs, labels in dataloader:
+#             inputs, labels = inputs.to(device), labels.to(device)
+#             outputs = model(inputs)
+#             preds = outputs.argmax(dim=1)
+#             y_true.extend(labels.cpu().numpy())
+#             y_pred.extend(preds.cpu().numpy())
+
+#     acc = np.mean(np.array(y_true) == np.array(y_pred))
+#     print(f"\nOverall Accuracy: {acc:.4f}\n")
+#     print(classification_report(y_true, y_pred, target_names=class_names, digits=4))
+
+#     # Confusion Matrix
+#     cm = confusion_matrix(y_true, y_pred)
+#     cmn = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+#     plt.figure(figsize=(7, 6))
+#     sns.heatmap(cmn, annot=True, fmt=".2f", cmap="Blues",
+#                 xticklabels=class_names, yticklabels=class_names)
+#     plt.xlabel("Predicted Labels", fontsize=12)
+#     plt.ylabel("True Labels", fontsize=12)
+#     plt.title("Confusion Matrix – ResNet50 RF Signal Classification", fontsize=14)
+#     plt.tight_layout()
+#     plt.savefig("confusion_matrix_resnet50.png", dpi=300)
+#     plt.show()
+
+#     print("\nConfusion matrix saved as 'confusion_matrix_resnet50.png'")
+#     return acc
+
+# # ----------------------------- #
+# #          Main Script          #
+# # ----------------------------- #
+# if __name__ == '__main__':
+#     args = parser.parse_args()
+
+#     use_cuda = torch.cuda.is_available()
+#     device = torch.device('cuda' if use_cuda else 'cpu')
+#     print(f"Training on device: {device}")
+
+#     torch.manual_seed(0)
+#     if use_cuda:
+#         torch.cuda.manual_seed_all(0)
+#         torch.backends.cudnn.deterministic = True
+#         torch.backends.cudnn.benchmark = False
+
+#     # -------------------- #
+#     #  Dataset Definition  #
+#     # -------------------- #
+#     transform_train = transforms.Compose([
+#         transforms.Resize((180, 180)),  # match paper input shape
+#         transforms.RandomHorizontalFlip(),
+#         transforms.ToTensor(),
+#         transforms.Normalize([0.485, 0.456, 0.406],
+#                              [0.229, 0.224, 0.225])
+#     ])
+
+#     dataset = ImageFolder(root=args.data_dir, transform=transform_train)
+#     class_names = dataset.classes
+#     num_classes = len(class_names)
+#     print(f"Detected classes: {class_names}")
+
+#     train_size = int(0.8 * len(dataset))
+#     test_size = len(dataset) - train_size
+#     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+#     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+#     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+
+#     # -------------------- #
+#     #    Model Creation    #
+#     # -------------------- #
+#     model = Model(gpu=use_cuda, multies=args.multies, unit=args.unit)
+#     model.to(device)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+#     # -------------------- #
+#     #     Training Loop    #
+#     # -------------------- #
+#     start_time = time.time()
+#     print(f"Starting {args.clean_epoch} clean epochs...")
+#     train_model(model, train_loader, optimizer, args.clean_epoch, device)
+
+#     # -------------------- #
+#     #    Evaluation Plot   #
+#     # -------------------- #
+#     print("Evaluating model and generating confusion matrix...")
+#     acc = eval_and_plot(model, test_loader, device, class_names)
+
+#     torch.save(model.state_dict(),
+#                f"clean_resnet50_{args.dup}-{args.multies}-{args.unit}.pth")
+#     print(f"Model saved as clean_resnet50_{args.dup}-{args.multies}-{args.unit}.pth")
+#     print(f"Training finished in {time.time() - start_time:.2f}s.")
+
+
 import argparse
 import os
 import time
@@ -565,11 +712,11 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import ImageFolder
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
+from sklearn.metrics import confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-from rnn import Model  # ResNet-50 model
+from rnn import Model  # <-- keep your ResNet50 model as it is
 
 # ----------------------------- #
 #        Argument Parser        #
@@ -585,13 +732,16 @@ parser.add_argument('--data-dir', type=str,
                     default=r"C:\Users\aront\Downloads\dataset\dataset")
 
 # ----------------------------- #
-#       Train & Eval Loop       #
+#      Train / Validate Loop    #
 # ----------------------------- #
-def train_model(model, dataloader, optimizer, epoch_num, device):
-    model.train()
-    for epoch in range(epoch_num):
-        total_loss, total_correct, total_samples = 0, 0, 0
-        for inputs, labels in dataloader:
+def train_and_validate(model, train_loader, val_loader, optimizer, epochs, device):
+    """Trains and evaluates the model each epoch (train + validation)."""
+    for epoch in range(epochs):
+        model.train()
+        train_loss, train_correct, train_total = 0, 0, 0
+
+        # ----- Training -----
+        for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -599,20 +749,46 @@ def train_model(model, dataloader, optimizer, epoch_num, device):
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item() * inputs.size(0)
+            train_loss += loss.item() * inputs.size(0)
             preds = outputs.argmax(dim=1)
-            total_correct += preds.eq(labels).sum().item()
-            total_samples += inputs.size(0)
+            train_correct += preds.eq(labels).sum().item()
+            train_total += inputs.size(0)
 
-        print(f"Epoch [{epoch + 1}/{epoch_num}] | "
-              f"Loss: {total_loss / total_samples:.4f} | "
-              f"Acc: {total_correct / total_samples:.4f}")
+        train_acc = train_correct / train_total
+        train_loss /= train_total
 
-def eval_and_plot(model, dataloader, device, class_names):
+        # ----- Validation -----
+        model.eval()
+        val_loss, val_correct, val_total = 0, 0, 0
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = F.cross_entropy(outputs, labels)
+
+                val_loss += loss.item() * inputs.size(0)
+                preds = outputs.argmax(dim=1)
+                val_correct += preds.eq(labels).sum().item()
+                val_total += inputs.size(0)
+
+        val_acc = val_correct / val_total
+        val_loss /= val_total
+
+        # ----- Print per epoch -----
+        print(f"Epoch [{epoch + 1}/{epochs}] | "
+              f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+              f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+
+# ----------------------------- #
+#     Evaluation (Confusion)    #
+# ----------------------------- #
+def evaluate_and_plot(model, test_loader, device, class_names):
+    """Evaluates model on test data and generates confusion matrix."""
     model.eval()
     y_true, y_pred = [], []
+
     with torch.no_grad():
-        for inputs, labels in dataloader:
+        for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             preds = outputs.argmax(dim=1)
@@ -620,10 +796,10 @@ def eval_and_plot(model, dataloader, device, class_names):
             y_pred.extend(preds.cpu().numpy())
 
     acc = np.mean(np.array(y_true) == np.array(y_pred))
-    print(f"\nOverall Accuracy: {acc:.4f}\n")
+    print(f"\n=== Final Test Accuracy: {acc:.4f} ===\n")
     print(classification_report(y_true, y_pred, target_names=class_names, digits=4))
 
-    # Confusion Matrix
+    # ----- Confusion Matrix -----
     cm = confusion_matrix(y_true, y_pred)
     cmn = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
 
@@ -637,7 +813,7 @@ def eval_and_plot(model, dataloader, device, class_names):
     plt.savefig("confusion_matrix_resnet50.png", dpi=300)
     plt.show()
 
-    print("\nConfusion matrix saved as 'confusion_matrix_resnet50.png'")
+    print("Confusion matrix saved as 'confusion_matrix_resnet50.png'")
     return acc
 
 # ----------------------------- #
@@ -659,24 +835,28 @@ if __name__ == '__main__':
     # -------------------- #
     #  Dataset Definition  #
     # -------------------- #
-    transform_train = transforms.Compose([
-        transforms.Resize((180, 180)),  # match paper input shape
+    transform_all = transforms.Compose([
+        transforms.Resize((180, 180)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406],
                              [0.229, 0.224, 0.225])
     ])
 
-    dataset = ImageFolder(root=args.data_dir, transform=transform_train)
+    dataset = ImageFolder(root=args.data_dir, transform=transform_all)
     class_names = dataset.classes
-    num_classes = len(class_names)
     print(f"Detected classes: {class_names}")
 
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    # Split data: 70% train, 15% val, 15% test
+    total_len = len(dataset)
+    train_len = int(0.7 * total_len)
+    val_len = int(0.15 * total_len)
+    test_len = total_len - train_len - val_len
+    train_set, val_set, test_set = random_split(dataset, [train_len, val_len, test_len])
+
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
 
     # -------------------- #
     #    Model Creation    #
@@ -686,19 +866,20 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # -------------------- #
-    #     Training Loop    #
+    #     Train + Valid    #
     # -------------------- #
     start_time = time.time()
-    print(f"Starting {args.clean_epoch} clean epochs...")
-    train_model(model, train_loader, optimizer, args.clean_epoch, device)
+    print(f"\nStarting training for {args.clean_epoch} epochs...\n")
+    train_and_validate(model, train_loader, val_loader, optimizer, args.clean_epoch, device)
 
     # -------------------- #
-    #    Evaluation Plot   #
+    #   Test & Confusion   #
     # -------------------- #
-    print("Evaluating model and generating confusion matrix...")
-    acc = eval_and_plot(model, test_loader, device, class_names)
+    print("\nEvaluating model on test data...\n")
+    test_acc = evaluate_and_plot(model, test_loader, device, class_names)
 
+    # Save model
     torch.save(model.state_dict(),
                f"clean_resnet50_{args.dup}-{args.multies}-{args.unit}.pth")
     print(f"Model saved as clean_resnet50_{args.dup}-{args.multies}-{args.unit}.pth")
-    print(f"Training finished in {time.time() - start_time:.2f}s.")
+    print(f"\nTraining finished in {time.time() - start_time:.2f}s.")
